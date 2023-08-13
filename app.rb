@@ -124,3 +124,55 @@ post("/process_single_message") do
 
   erb :message_response
 end
+
+get("/chat") do
+  @chat_history = request.cookies["chat_history"] ? JSON.parse(request.cookies["chat_history"]) : []
+  erb :chat
+end
+
+post("/add_message_to_chat") do
+  user_message = params['user_message']
+  
+  request_headers_hash = {
+    "Authorization" => "Bearer #{ENV.fetch("GPTKEY")}",
+    "content-type" => "application/json"
+  }
+
+  request_body_hash = {
+    "model" => "gpt-3.5-turbo",
+    "messages" => [
+      {
+        "role" => "system",
+        "content" => "You are an assistant who responds in a simple and clear way."
+      },
+      {
+        "role" => "user",
+        "content" => user_message
+      }
+    ]
+  }
+
+  request_body_json = JSON.generate(request_body_hash)
+  
+  raw_response = HTTP.headers(request_headers_hash).post(
+    "https://api.openai.com/v1/chat/completions",
+    :body => request_body_json
+  ).to_s
+
+  parsed_response = JSON.parse(raw_response)
+  gpt_response = parsed_response['choices'][0]['message']['content']
+
+  # Save chat history to cookies
+  chat_history = request.cookies["chat_history"] ? JSON.parse(request.cookies["chat_history"]) : []
+  chat_history.push({"role" => "user", "message" => user_message})
+  chat_history.push({"role" => "assistant", "message" => gpt_response})
+
+  response.set_cookie("chat_history", chat_history.to_json)
+
+  redirect "/chat"
+end
+
+post("/clear_chat") do
+  response.delete_cookie("chat_history")
+  redirect "/chat"
+end
